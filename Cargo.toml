@@ -1,0 +1,16 @@
+[package]
+name = "emysound-feeder-rs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = { version = "1.0.57", features = ["backtrace"] }
+clap = { version = "3.1.16", features = ["derive"] }
+error-chain = "0.12"
+hls_m3u8 = { version = "0.4.1", features = ["chrono", "backtrace"] }
+log = "0.4.17"
+reqwest = { version = "0.11.10", features = ["stream"] }
+simplelog = "0.12.0"
+tokio = { version = "1", features = ["full", "fs"] } # version 1 required for reqwest
