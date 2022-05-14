@@ -82,14 +82,21 @@ async fn main() -> anyhow::Result<()> {
                                     }
                                     Err(e) => {
                                         // It could be an advertisement.
+                                        // #EXTINF:10,offset=0,adContext=''
+                                        if let Some(title) = segment.duration.title() {
+                                            if title.contains("adContext=") {
+                                                log::info!("Segment#{} DOWNLOAD: advertisment: title={title}", segment.number());
+                                            }
+                                        } else {
+                                            // Happens at the first download and sometimes in the middle then section changes. ignore.
+                                            log::info!("Segment#{} SKIPPED: no info: {e:#?}", segment.number());
+                                            log::debug!(
+                                                "Segment#{} title={:?}",
+                                                segment.number(),
+                                                segment.duration.title()
+                                            );
+                                        }
 
-                                        // Happens at the first download and sometimes in the middle then section changes. ignore.
-                                        log::info!("Segment#{} SKIPPED: no info: {e:#?}", segment.number());
-                                        log::debug!(
-                                            "Segment#{} title={:?}",
-                                            segment.number(),
-                                            segment.duration.title()
-                                        );
                                     }
                                 }
                             });
