@@ -1,8 +1,10 @@
+use std::fmt::Display;
 use std::path::Path;
 use std::time::Duration;
 // use std::time::Duration;
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, Result};
+use chrono::Utc;
 use clap::Parser;
 use hls_m3u8::{MediaPlaylist, MediaSegment};
 use lazy_static::lazy_static;
@@ -10,6 +12,7 @@ use lru::LruCache;
 use regex::Regex;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{StatusCode, Url};
+use tokio_stream::StreamExt;
 use uuid::Uuid;
 
 #[derive(Debug, Parser)]
@@ -21,11 +24,11 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
     let args = Args::parse();
 
     simplelog::TermLogger::init(
-        simplelog::LevelFilter::Debug,
+        simplelog::LevelFilter::Info,
         simplelog::Config::default(),
         simplelog::TerminalMode::Mixed,
         simplelog::ColorChoice::Auto,
@@ -58,27 +61,45 @@ async fn main() -> anyhow::Result<()> {
                     if content_type == "application/vnd.apple.mpegurl; charset=UTF-8" {
                         let content = response.text().await?;
                         let m3u8 = MediaPlaylist::try_from(content.as_str())?;
-                        m3u8.segments
+                        let downloads: Vec<SegmentDownloadInfo> = m3u8.segments
                             .iter()
                             .filter(|(_, segment)| segment_number_filter.need_download(segment))
-                            .for_each(|(_, segment)| {
+                            .filter_map(|(_, segment)| {
+                                let url: Option<Url> = segment.uri().parse().ok();
+                                if url.is_none() {
+                                    log::error!("Segment#{} invalid url {}", segment.number(), segment.uri());
+                                    return None;
+                                }
+                                let url = url.unwrap();
+
                                 match KostaRadioSegmentInfo::try_from(segment) {
                                     Ok(info) => {
-                                        match info.suggested_content_kind() {
+                                        log::debug!("Segment#{} info: {info:?}", segment.number());
+                                        let kind = info.suggested_content_kind();
+                                        let download_info = SegmentDownloadInfo{
+                                                    url,
+                                                    artist: info.artist.clone(),
+                                                    title: info.title.clone(),
+                                                    kind,
+                                                };
+                                        match kind {
                                             SuggestedSegmentContentKind::None => {
                                                 log::info!("Segment#{} SKIPPED: unknown kind, artist={}, title={}", segment.number(), info.artist, info.title);
+                                                None
                                             }
                                             SuggestedSegmentContentKind::Talk => {
                                                 log::info!("Segment#{} DOWNLOAD: likely talk, artist: {}, title: {}", segment.number(), info.artist, info.title);
+                                                Some(download_info)
                                             },
                                             SuggestedSegmentContentKind::Advertisement => {
                                                 log::info!("Segment#{} DOWNLOAD: likely advertisment, artist: {}, title: {}", segment.number(), info.artist, info.title);
+                                                Some(download_info)
                                             },
                                             SuggestedSegmentContentKind::Music => {
                                                 log::info!("Segment#{} DOWNLOAD: likely music, artist: {}, title: {}", segment.number(), info.artist, info.title);
+                                                Some(download_info)
                                             },
                                         }
-                                        log::debug!("Segment#{} info: {info:?}", segment.number());
                                     }
                                     Err(e) => {
                                         // It could be an advertisement.
@@ -86,7 +107,9 @@ async fn main() -> anyhow::Result<()> {
                                         if let Some(title) = segment.duration.title() {
                                             if title.contains("adContext=") {
                                                 log::info!("Segment#{} DOWNLOAD: advertisment: title={title}", segment.number());
+                                                return Some(SegmentDownloadInfo{ url, artist: "".to_string(), title: "".to_string(), kind: SuggestedSegmentContentKind::Advertisement });
                                             }
+                                            None
                                         } else {
                                             // Happens at the first download and sometimes in the middle then section changes. ignore.
                                             log::info!("Segment#{} SKIPPED: no info: {e:#?}", segment.number());
@@ -95,12 +118,23 @@ async fn main() -> anyhow::Result<()> {
                                                 segment.number(),
                                                 segment.duration.title()
                                             );
+                                            None
                                         }
-
                                     }
                                 }
-                            });
-                        tokio::time::sleep(m3u8.duration() / 2).await;
+                            }).collect();
+
+                        let mut stream = tokio_stream::iter(downloads);
+                        while let Some(info) = stream.next().await {
+                            match download(output_dir, &info).await {
+                                Ok(path) => {
+                                    log::info!("Saved to {}", path);
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to save {}: {e:#}", info.url)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -113,6 +147,43 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn download(destination: &Path, info: &SegmentDownloadInfo) -> Result<String> {
+    let response = reqwest::get(info.url.clone()).await?;
+
+    log::debug!(
+        "Downloaded {}, {} bytes",
+        info.url,
+        response.content_length().unwrap_or_default()
+    );
+
+    let bytes = response.bytes().await?;
+    let path = destination.join(format!(
+        "{}_{}_{}_{}.{}",
+        Utc::now().format("%Y-%m-%d_%H-%M-%S"),
+        info.kind,
+        info.artist,
+        info.title,
+        info.url
+            .path_segments()
+            .and_then(|s| s.last())
+            .unwrap_or("unknown")
+    ));
+
+    log::debug!("Saving to {:?}", path);
+    tokio::fs::write(&path, bytes).await?;
+
+    path.to_str()
+        .map(|s| s.to_owned())
+        .ok_or_else(|| anyhow!("Failed to convert path"))
+}
+
+#[derive(Debug, Clone)]
+struct SegmentDownloadInfo {
+    url: Url,
+    artist: String,
+    title: String,
+    kind: SuggestedSegmentContentKind,
+}
 trait SegmentDownloadFilter {
     /// Returs `true` if `segment` should be downloaded.
     fn need_download(&mut self, segment: &MediaSegment) -> bool;
@@ -133,9 +204,12 @@ impl SegmentNumberFilter {
 impl SegmentDownloadFilter for SegmentNumberFilter {
     fn need_download(&mut self, segment: &MediaSegment) -> bool {
         let number = segment.number();
-        let seen = number <= self.last_seen_number;
-        self.last_seen_number = number;
-        !seen
+        if number <= self.last_seen_number {
+            false
+        } else {
+            self.last_seen_number = number;
+            true
+        }
     }
 }
 
@@ -285,9 +359,21 @@ impl TryFrom<&MediaSegment<'_>> for KostaRadioSegmentInfo {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 enum SuggestedSegmentContentKind {
     None,
     Talk,
     Advertisement,
     Music,
+}
+
+impl Display for SuggestedSegmentContentKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SuggestedSegmentContentKind::None => f.write_str("none"),
+            SuggestedSegmentContentKind::Talk => f.write_str("talk"),
+            SuggestedSegmentContentKind::Advertisement => f.write_str("advertisement"),
+            SuggestedSegmentContentKind::Music => f.write_str("music"),
+        }
+    }
 }
