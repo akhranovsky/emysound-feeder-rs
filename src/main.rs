@@ -1,12 +1,15 @@
 use std::fmt::Display;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 // use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use bytes::Bytes;
 use chrono::Utc;
 use clap::Parser;
+use emycloud_client_rs::MediaSource;
 use hls_m3u8::{MediaPlaylist, MediaSegment};
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use lru::LruCache;
 use regex::Regex;
@@ -54,7 +57,7 @@ async fn main() -> Result<()> {
             .await?;
         match response.status() {
             StatusCode::OK => {
-                log::info!("Received stream playlist.");
+                log::debug!("Received stream playlist.");
 
                 if let Some(content_type) = response.headers().get(CONTENT_TYPE) {
                     let content_type = content_type.to_str()?;
@@ -85,6 +88,7 @@ async fn main() -> Result<()> {
                                         match kind {
                                             SuggestedSegmentContentKind::None => {
                                                 log::info!("Segment#{} SKIPPED: unknown kind, artist={}, title={}", segment.number(), info.artist, info.title);
+                                                log::info!("Segment#{} title={:?}", segment.number(), segment.duration.title());
                                                 None
                                             }
                                             SuggestedSegmentContentKind::Talk => {
@@ -126,15 +130,91 @@ async fn main() -> Result<()> {
 
                         let mut stream = tokio_stream::iter(downloads);
                         while let Some(info) = stream.next().await {
-                            match download(output_dir, &info).await {
-                                Ok(path) => {
-                                    log::info!("Saved to {}", path);
+                            match download(&info).await {
+                                Ok(bytes) => {
+                                    let filename = info.filename();
+                                    let source = MediaSource::Bytes(&filename, &bytes);
+                                    match emycloud_client_rs::query(source.clone()).await {
+                                        Ok(results) => {
+                                            let matches: Vec<Uuid> = results
+                                                .iter()
+                                                .filter_map(|r| {
+                                                    Uuid::try_parse(&r.track.id).ok().and_then(
+                                                        |id| {
+                                                            let coverage = r
+                                                                .audio
+                                                                .as_ref()
+                                                                .and_then(|m| {
+                                                                    m.coverage.query_coverage
+                                                                })
+                                                                .map(|c| (c * 100f32).trunc() as u8)
+                                                                .unwrap_or_default();
+
+                                                            log::info!(
+                                                        "{} '{}'/'{}' matches '{}'/'{}' {}%\n{:?}",
+                                                        info.url,
+                                                        info.title,
+                                                        info.artist,
+                                                        r.track
+                                                            .title
+                                                            .as_ref()
+                                                            .unwrap_or(&"None".to_string()),
+                                                        r.track
+                                                            .artist
+                                                            .as_ref()
+                                                            .unwrap_or(&"None".to_string()),
+                                                        coverage,
+                                                        r
+                                                    );
+
+                                                            if coverage >= 85 {
+                                                                Some(id)
+                                                            } else {
+                                                                None
+                                                            }
+                                                        },
+                                                    )
+                                                })
+                                                .collect();
+
+                                            if matches.is_empty() {
+                                                match emycloud_client_rs::insert(
+                                                    source,
+                                                    info.artist.clone(),
+                                                    info.title.clone(),
+                                                )
+                                                .await
+                                                {
+                                                    Ok(id) => {
+                                                        log::info!(
+                                                            "Inserted new track '{}'/'{}': {id}",
+                                                            info.artist,
+                                                            info.title,
+                                                        )
+
+                                                        // TODO: Update meta info.
+                                                    }
+                                                    Err(e) => {
+                                                        log::error!("Failed to insert track '{}'/'{}': {e:#}", info.artist, info.title);
+                                                    }
+                                                }
+                                            } else {
+                                                for id in &matches {
+                                                    log::info!("Update metadata for {id}");
+                                                    // TODO: Update meta info.
+                                                }
+                                            }
+                                        }
+                                        Err(_) => todo!(),
+                                    }
                                 }
                                 Err(e) => {
-                                    log::error!("Failed to save {}: {e:#}", info.url)
+                                    log::error!("Failed to download {}: {e:#}", info.url)
                                 }
                             }
                         }
+
+                        tokio::time::sleep(m3u8.duration() / 2).await;
                     }
                 }
             }
@@ -147,7 +227,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn download(destination: &Path, info: &SegmentDownloadInfo) -> Result<String> {
+async fn download(info: &SegmentDownloadInfo) -> Result<Bytes> {
     let response = reqwest::get(info.url.clone()).await?;
 
     log::debug!(
@@ -156,25 +236,14 @@ async fn download(destination: &Path, info: &SegmentDownloadInfo) -> Result<Stri
         response.content_length().unwrap_or_default()
     );
 
-    let bytes = response.bytes().await?;
-    let path = destination.join(format!(
-        "{}_{}_{}_{}.{}",
-        Utc::now().format("%Y-%m-%d_%H-%M-%S"),
-        info.kind,
-        info.artist,
-        info.title,
-        info.url
-            .path_segments()
-            .and_then(|s| s.last())
-            .unwrap_or("unknown")
-    ));
+    response.bytes().await.context("Retrieve bytes")
 
-    log::debug!("Saving to {:?}", path);
-    tokio::fs::write(&path, bytes).await?;
+    // log::debug!("Saving to {:?}", path);
+    // tokio::fs::write(&path, bytes).await?;
 
-    path.to_str()
-        .map(|s| s.to_owned())
-        .ok_or_else(|| anyhow!("Failed to convert path"))
+    // path.to_str()
+    //     .map(|s| s.to_owned())
+    //     .ok_or_else(|| anyhow!("Failed to convert path"))
 }
 
 #[derive(Debug, Clone)]
@@ -183,6 +252,22 @@ struct SegmentDownloadInfo {
     artist: String,
     title: String,
     kind: SuggestedSegmentContentKind,
+}
+
+impl SegmentDownloadInfo {
+    fn filename(&self) -> String {
+        format!(
+            "{}_{}_{}_{}.{}",
+            Utc::now().format("%Y-%m-%d_%H-%M-%S"),
+            self.kind,
+            self.artist,
+            self.title,
+            self.url
+                .path_segments()
+                .and_then(|s| s.last())
+                .unwrap_or("unknown")
+        )
+    }
 }
 trait SegmentDownloadFilter {
     /// Returs `true` if `segment` should be downloaded.
