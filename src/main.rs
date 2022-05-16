@@ -111,7 +111,7 @@ async fn main() -> Result<()> {
                                         if let Some(title) = segment.duration.title() {
                                             if title.contains("adContext=") {
                                                 log::info!("Segment#{} DOWNLOAD: advertisment: title={title}", segment.number());
-                                                return Some(SegmentDownloadInfo{ url, artist: "".to_string(), title: "".to_string(), kind: SuggestedSegmentContentKind::Advertisement });
+                                                return Some(SegmentDownloadInfo{ url, artist: "Advertisement".to_string(), title: "Advertisement".to_string() , kind: SuggestedSegmentContentKind::Advertisement });
                                             }
                                             None
                                         } else {
@@ -151,7 +151,7 @@ async fn main() -> Result<()> {
                                                                 .unwrap_or_default();
 
                                                             log::info!(
-                                                        "{} '{}'/'{}' matches '{}'/'{}' {}%\n{:?}",
+                                                        "{} '{}'/'{}' matches '{}'/'{}' {}%",
                                                         info.url,
                                                         info.title,
                                                         info.artist,
@@ -163,11 +163,10 @@ async fn main() -> Result<()> {
                                                             .artist
                                                             .as_ref()
                                                             .unwrap_or(&"None".to_string()),
-                                                        coverage,
-                                                        r
+                                                        coverage
                                                     );
 
-                                                            if coverage >= 85 {
+                                                            if coverage >= 80 {
                                                                 Some(id)
                                                             } else {
                                                                 None
