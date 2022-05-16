@@ -1,17 +1,14 @@
 use std::fmt::Display;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 // use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use bytes::Bytes;
 use chrono::Utc;
 use clap::Parser;
 use emycloud_client_rs::MediaSource;
 use hls_m3u8::{MediaPlaylist, MediaSegment};
-use itertools::Itertools;
 use lazy_static::lazy_static;
-use lru::LruCache;
 use regex::Regex;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{StatusCode, Url};
@@ -22,8 +19,6 @@ use uuid::Uuid;
 struct Args {
     /// Stream URL (m3u8 file)
     stream_url: String,
-    /// Output directory
-    output_dir: String,
 }
 
 #[tokio::main]
@@ -38,23 +33,15 @@ async fn main() -> Result<()> {
     )?;
 
     let stream_url: Url = args.stream_url.parse()?;
-    let output_dir = Path::new(&args.output_dir);
 
-    log::debug!("Fetching {} and saving to {output_dir:?}", &stream_url);
+    log::debug!("Fetching {stream_url} ");
 
     let client = reqwest::Client::new();
-    let request = client.get(stream_url).build()?;
-
     let mut segment_number_filter = SegmentNumberFilter::new();
 
     loop {
-        let response = client
-            .execute(
-                request
-                    .try_clone()
-                    .ok_or_else(|| anyhow!("Failed to clone request"))?,
-            )
-            .await?;
+        let response = client.get(stream_url.clone()).send().await?;
+
         match response.status() {
             StatusCode::OK => {
                 log::debug!("Received stream playlist.");
@@ -218,12 +205,12 @@ async fn main() -> Result<()> {
                 }
             }
             _ => {
-                log::error!("Failed to get playlist {}", response.text().await?);
-                break;
+                let msg = format!("Failed to get playlist {}", response.text().await?);
+                log::error!("{msg}");
+                bail!(msg);
             }
         }
     }
-    Ok(())
 }
 
 async fn download(info: &SegmentDownloadInfo) -> Result<Bytes> {
@@ -293,29 +280,6 @@ impl SegmentDownloadFilter for SegmentNumberFilter {
         } else {
             self.last_seen_number = number;
             true
-        }
-    }
-}
-
-struct UrlFilter {
-    lru_cache: LruCache<Url, ()>,
-}
-
-#[allow(dead_code)]
-impl UrlFilter {
-    fn new() -> Self {
-        Self {
-            lru_cache: LruCache::new(10),
-        }
-    }
-}
-
-impl SegmentDownloadFilter for UrlFilter {
-    fn need_download(&mut self, segment: &MediaSegment) -> bool {
-        if let Ok(url) = segment.uri().parse() {
-            self.lru_cache.put(url, ()).is_none()
-        } else {
-            false
         }
     }
 }
