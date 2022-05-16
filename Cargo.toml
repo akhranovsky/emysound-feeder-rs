@@ -15,10 +15,10 @@ hls_m3u8 = { version = "0.4.1", features = ["chrono", "backtrace"] }
 itertools = "0.10.3"
 lazy_static = "1.4.0"
 log = "0.4.17"
-lru = "0.7.5"
 regex = "1.5.5"
 reqwest = { version = "0.11.10", features = ["stream"] }
 simplelog = "0.12.0"
+sqlx = { version = "0.5.13", features = ["sqlite", "runtime-tokio-native-tls", "chrono"] }
 tokio = { version = "1", features = ["full", "fs"] } # version 1 required for reqwest
 tokio-stream = "0.1.8"
 uuid = { version = "1.0.0", features = ["v4"] }
