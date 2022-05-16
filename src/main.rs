@@ -15,6 +15,8 @@ use reqwest::{StatusCode, Url};
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
+mod db;
+
 #[derive(Debug, Parser)]
 struct Args {
     /// Stream URL (m3u8 file)
