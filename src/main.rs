@@ -216,7 +216,7 @@ async fn main() -> Result<()> {
 }
 
 #[derive(Debug)]
-enum ContentType {
+pub enum ContentType {
     Aac,
 }
 
