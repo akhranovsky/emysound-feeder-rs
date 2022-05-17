@@ -10,7 +10,7 @@ use emycloud_client_rs::MediaSource;
 use hls_m3u8::{MediaPlaylist, MediaSegment};
 use lazy_static::lazy_static;
 use regex::Regex;
-use reqwest::header::CONTENT_TYPE;
+use reqwest::header::{HeaderValue, CONTENT_TYPE};
 use reqwest::{StatusCode, Url};
 use tokio_stream::StreamExt;
 use uuid::Uuid;
@@ -120,7 +120,7 @@ async fn main() -> Result<()> {
                         let mut stream = tokio_stream::iter(downloads);
                         while let Some(info) = stream.next().await {
                             match download(&info).await {
-                                Ok(bytes) => {
+                                Ok((_content_type, bytes)) => {
                                     let filename = info.filename();
                                     let source = MediaSource::Bytes(&filename, &bytes);
                                     match emycloud_client_rs::query(source.clone()).await {
@@ -215,7 +215,32 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn download(info: &SegmentDownloadInfo) -> Result<Bytes> {
+#[derive(Debug)]
+enum ContentType {
+    Aac,
+}
+
+impl TryFrom<&HeaderValue> for ContentType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &HeaderValue) -> Result<Self, Self::Error> {
+        if value == HeaderValue::from_static("audio/acc") {
+            Ok(ContentType::Aac)
+        } else {
+            Err(anyhow!("Unknown content type"))
+        }
+    }
+}
+
+impl ToString for ContentType {
+    fn to_string(&self) -> String {
+        match self {
+            ContentType::Aac => "aac".to_owned(),
+        }
+    }
+}
+
+async fn download(info: &SegmentDownloadInfo) -> Result<(Option<ContentType>, Bytes)> {
     let response = reqwest::get(info.url.clone()).await?;
 
     log::debug!(
@@ -224,14 +249,18 @@ async fn download(info: &SegmentDownloadInfo) -> Result<Bytes> {
         response.content_length().unwrap_or_default()
     );
 
-    response.bytes().await.context("Retrieve bytes")
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|h| ContentType::try_from(h).ok());
 
-    // log::debug!("Saving to {:?}", path);
-    // tokio::fs::write(&path, bytes).await?;
+    log::debug!("Content type: {:?}", content_type);
 
-    // path.to_str()
-    //     .map(|s| s.to_owned())
-    //     .ok_or_else(|| anyhow!("Failed to convert path"))
+    response
+        .bytes()
+        .await
+        .context("Retrieve bytes")
+        .map(|bytes| (content_type, bytes))
 }
 
 #[derive(Debug, Clone)]
@@ -410,7 +439,7 @@ impl TryFrom<&MediaSegment<'_>> for KostaRadioSegmentInfo {
 }
 
 #[derive(Debug, Copy, Clone)]
-enum SuggestedSegmentContentKind {
+pub enum SuggestedSegmentContentKind {
     None,
     Talk,
     Advertisement,
