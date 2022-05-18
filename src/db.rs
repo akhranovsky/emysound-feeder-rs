@@ -67,11 +67,11 @@ impl Db {
         Ok(())
     }
 
-    pub fn add_match(&self, id: &Uuid) -> anyhow::Result<()> {
+    pub fn add_match(&self, id: &Uuid, score: u8) -> anyhow::Result<()> {
         self.conn
             .borrow()
-            .prepare_cached("INSERT INTO matches(id) VALUES(?)")?
-            .execute([id.to_string()])?;
+            .prepare_cached("INSERT INTO matches(id, score) VALUES(?, ?)")?
+            .execute(params![id.to_string(), score])?;
 
         Ok(())
     }
@@ -103,14 +103,10 @@ fn init_database(conn: &mut Connection) -> anyhow::Result<()> {
                 ON UPDATE NO ACTION
         );
         CREATE TABLE IF NOT EXISTS matches(
-            id STRING PRIMARY KEY,
+            id STRING NOT NULL,
             matched DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-            FOREIGN KEY (id)
-            REFERENCES main (id)
-                ON DELETE CASCADE
-                ON UPDATE NO ACTION
-        )
-        WITHOUT ROWID;
+            score REAL NOT NULL
+        );
         COMMIT;"#,
     )
     .map_err(|e| e.into())
@@ -146,6 +142,7 @@ mod tests {
     fn test_b_add_match() {
         let db = Db::new().unwrap();
 
-        db.add_match(&UUID).unwrap();
+        db.add_match(&UUID, 90).unwrap();
+        db.add_match(&UUID, 80).unwrap();
     }
 }
