@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::anyhow;
 use bytes::Bytes;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use rusqlite::{params, Connection, DatabaseName, OpenFlags, ToSql};
