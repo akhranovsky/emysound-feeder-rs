@@ -16,6 +16,7 @@ use tokio_stream::StreamExt;
 use uuid::Uuid;
 
 mod db;
+mod storage;
 
 #[derive(Debug, Parser)]
 struct Args {
