@@ -15,6 +15,7 @@ use reqwest::{StatusCode, Url};
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
+mod emysound;
 mod storage;
 
 #[derive(Debug, Parser)]
@@ -122,79 +123,38 @@ async fn main() -> Result<()> {
                             match download(&info).await {
                                 Ok((_content_type, bytes)) => {
                                     let filename = info.filename();
-                                    let source = MediaSource::Bytes(&filename, &bytes);
-                                    match emycloud_client_rs::query(source.clone()).await {
-                                        Ok(results) => {
-                                            let matches: Vec<Uuid> = results
-                                                .iter()
-                                                .filter_map(|r| {
-                                                    Uuid::try_parse(&r.track.id).ok().and_then(
-                                                        |id| {
-                                                            let coverage = r
-                                                                .audio
-                                                                .as_ref()
-                                                                .and_then(|m| {
-                                                                    m.coverage.query_coverage
-                                                                })
-                                                                .map(|c| (c * 100f32).trunc() as u8)
-                                                                .unwrap_or_default();
+                                    let matches = emysound::query(&filename, &bytes).await?;
 
-                                                            log::info!(
-                                                        "{} '{}'/'{}' matches '{}'/'{}' {}%",
-                                                        info.url,
-                                                        info.title,
-                                                        info.artist,
-                                                        r.track
-                                                            .title
-                                                            .as_ref()
-                                                            .unwrap_or(&"None".to_string()),
-                                                        r.track
-                                                            .artist
-                                                            .as_ref()
-                                                            .unwrap_or(&"None".to_string()),
-                                                        coverage
-                                                    );
+                                    //     if matches.is_empty() {
+                                    //         match emycloud_client_rs::insert(
+                                    //             source,
+                                    //             info.artist.clone(),
+                                    //             info.title.clone(),
+                                    //         )
+                                    //         .await
+                                    //         {
+                                    //             Ok(id) => {
+                                    //                 log::info!(
+                                    //                     "Inserted new track '{}'/'{}': {id}",
+                                    //                     info.artist,
+                                    //                     info.title,
+                                    //                 )
 
-                                                            if coverage >= 80 {
-                                                                Some(id)
-                                                            } else {
-                                                                None
-                                                            }
-                                                        },
-                                                    )
-                                                })
-                                                .collect();
-
-                                            if matches.is_empty() {
-                                                match emycloud_client_rs::insert(
-                                                    source,
-                                                    info.artist.clone(),
-                                                    info.title.clone(),
-                                                )
-                                                .await
-                                                {
-                                                    Ok(id) => {
-                                                        log::info!(
-                                                            "Inserted new track '{}'/'{}': {id}",
-                                                            info.artist,
-                                                            info.title,
-                                                        )
-
-                                                        // TODO: Update meta info.
-                                                    }
-                                                    Err(e) => {
-                                                        log::error!("Failed to insert track '{}'/'{}': {e:#}", info.artist, info.title);
-                                                    }
-                                                }
-                                            } else {
-                                                for id in &matches {
-                                                    log::info!("Update metadata for {id}");
-                                                    // TODO: Update meta info.
-                                                }
-                                            }
-                                        }
-                                        Err(_) => todo!(),
-                                    }
+                                    //                 // TODO: Update meta info.
+                                    //             }
+                                    //             Err(e) => {
+                                    //                 log::error!("Failed to insert track '{}'/'{}': {e:#}", info.artist, info.title);
+                                    //             }
+                                    //         }
+                                    //     } else {
+                                    //         for id in &matches {
+                                    //             log::info!("Update metadata for {id}");
+                                    //             // TODO: Update meta info.
+                                    //         }
+                                    //     }
+                                    // }
+                                    // Err(_) => todo!(),
+                                    // }
                                 }
                                 Err(e) => {
                                     log::error!("Failed to download {}: {e:#}", info.url)
