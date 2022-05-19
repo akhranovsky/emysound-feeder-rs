@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 
 use std::cell::RefCell;
+use std::fmt::Display;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
+use lazy_static::__Deref;
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, Value, ValueRef};
 use rusqlite::{params, Connection, OpenFlags, ToSql};
 use uuid::Uuid;
 
@@ -14,11 +16,55 @@ pub struct MetadataStorage {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AudioKind {
-    Unknown,
-    Audio,
     Advertisement,
     Music,
     Talk,
+    Unknown,
+}
+
+impl ToSql for AudioKind {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        match self {
+            AudioKind::Advertisement => "advertisement",
+            AudioKind::Music => "music",
+            AudioKind::Talk => "talk",
+            AudioKind::Unknown => "unknown",
+        }
+        .to_sql()
+    }
+}
+
+impl FromSql for AudioKind {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        value
+            .as_str()
+            .and_then(|v| v.try_into().map_err(|_| FromSqlError::InvalidType))
+    }
+}
+impl ToString for AudioKind {
+    fn to_string(&self) -> String {
+        match self {
+            AudioKind::Advertisement => "advertisement",
+            AudioKind::Music => "music",
+            AudioKind::Talk => "talk",
+            AudioKind::Unknown => "unknown",
+        }
+        .to_string()
+    }
+}
+
+impl TryFrom<&str> for AudioKind {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "advertisement" => Ok(AudioKind::Advertisement),
+            "music" => Ok(AudioKind::Music),
+            "talk" => Ok(AudioKind::Talk),
+            "unknown" => Ok(AudioKind::Unknown),
+            _ => Err(anyhow::anyhow!("Invalid kind value={value}")),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,31 +91,6 @@ impl Metadata {
             artist,
             title,
         }
-    }
-}
-
-impl ToSql for AudioKind {
-    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-        match self {
-            AudioKind::Unknown => "unknown".to_sql(),
-            AudioKind::Audio => "audio".to_sql(),
-            AudioKind::Advertisement => "advertisement".to_sql(),
-            AudioKind::Music => "music".to_sql(),
-            AudioKind::Talk => "talk".to_sql(),
-        }
-    }
-}
-
-impl FromSql for AudioKind {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        value.as_str().and_then(|v| match v {
-            "audio" => Ok(AudioKind::Audio),
-            "advertisement" => Ok(AudioKind::Advertisement),
-            "music" => Ok(AudioKind::Music),
-            "talk" => Ok(AudioKind::Talk),
-            "unknown" => Ok(AudioKind::Unknown),
-            _ => Err(FromSqlError::InvalidType),
-        })
     }
 }
 

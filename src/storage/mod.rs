@@ -5,7 +5,6 @@ mod matches;
 mod metadata;
 
 pub use audio::AudioData;
-pub use audio::AudioFormat;
 pub use audio::AudioStorage;
 
 pub use matches::MatchData;

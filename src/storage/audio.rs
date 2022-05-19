@@ -9,37 +9,16 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRe
 use rusqlite::{params, Connection, DatabaseName, OpenFlags, ToSql};
 use uuid::Uuid;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioData {
     id: Uuid,
-    format: AudioFormat,
+    format: String,
     bytes: Bytes,
 }
 
 impl AudioData {
-    pub fn new(id: Uuid, format: AudioFormat, bytes: Bytes) -> Self {
+    pub fn new(id: Uuid, format: String, bytes: Bytes) -> Self {
         Self { id, format, bytes }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum AudioFormat {
-    Aac,
-}
-
-impl ToSql for AudioFormat {
-    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-        match self {
-            AudioFormat::Aac => "aac".to_sql(),
-        }
-    }
-}
-
-impl FromSql for AudioFormat {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        value.as_str().and_then(|v| match v {
-            "aac" => Ok(AudioFormat::Aac),
-            _ => Err(FromSqlError::InvalidType),
-        })
     }
 }
 
@@ -103,7 +82,7 @@ impl AudioStorage {
         let mut stmt = conn.prepare("SELECT rowid, format FROM audio WHERE id=?")?;
         let data = stmt.query_row([id.to_string()], |row| {
             let rowid = row.get(0)?;
-            let format: AudioFormat = row.get(1)?;
+            let format = row.get(1)?;
 
             let mut blob = conn.blob_open(DatabaseName::Main, "audio", "bytes", rowid, true)?;
             let mut buffer = Vec::new();
@@ -119,21 +98,20 @@ impl AudioStorage {
 mod tests {
     use uuid::Uuid;
 
-    use super::{AudioData, AudioFormat, AudioStorage};
+    use super::{AudioData, AudioStorage};
 
     #[test]
     fn test() {
         let data = AudioData::new(
             Uuid::new_v4(),
-            AudioFormat::Aac,
+            "audio/aac".to_owned(),
             b"1234567890".as_ref().into(),
         );
+
         let db = AudioStorage::new(&"./test_audio.db").unwrap();
         db.insert(&data).unwrap();
 
         let result = db.get(data.id).unwrap();
-        assert_eq!(result.id, data.id);
-        assert_eq!(result.format, data.format);
-        assert_eq!(result.bytes, data.bytes);
+        assert_eq!(result, data);
     }
 }

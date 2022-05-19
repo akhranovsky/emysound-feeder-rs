@@ -9,7 +9,7 @@ use clap::Parser;
 use hls_m3u8::{MediaPlaylist, MediaSegment};
 use lazy_static::lazy_static;
 use regex::Regex;
-use reqwest::header::{HeaderValue, CONTENT_TYPE};
+use reqwest::header::CONTENT_TYPE;
 use reqwest::{StatusCode, Url};
 use storage::AudioKind;
 use tokio_stream::StreamExt;
@@ -19,7 +19,7 @@ mod emysound;
 mod storage;
 
 use crate::emysound::TrackInfo;
-use crate::storage::{AudioData, AudioFormat, Metadata};
+use crate::storage::{AudioData, Metadata};
 use crate::storage::{AudioStorage, MatchesStorage, MetadataStorage};
 
 #[derive(Debug, Parser)]
@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
                         let mut stream = tokio_stream::iter(downloads);
                         while let Some(info) = stream.next().await {
                             match download(&info).await {
-                                Ok((content_type, bytes)) => {
+                                Ok((audio_format, bytes)) => {
                                     let filename = info.filename();
                                     let matches = emysound::query(&filename, &bytes).await?;
 
@@ -138,59 +138,20 @@ async fn main() -> Result<()> {
                                         emysound::insert(info.to_track_info(id), &filename, &bytes)
                                             .await?;
 
-                                        let metadata = info.to_metadata(id);
-                                        let audio_format = content_type
-                                            .map(|t| match t {
-                                                ContentType::Aac => AudioFormat::Aac,
-                                            })
-                                            .ok_or_else(|| {
-                                                anyhow!("Failed to find audio format")
-                                            })?;
-
-                                        let audio_format =
-                                            AudioData::new(id, audio_format, bytes.clone());
-
                                         audio_storage
-                                            .insert(&audio_format)
+                                            .insert(&AudioData::new(
+                                                id,
+                                                audio_format,
+                                                bytes.clone(),
+                                            ))
                                             .context("Insert audio")?;
 
                                         metadata_storage
-                                            .insert(&metadata)
+                                            .insert(&info.to_metadata(id))
                                             .context("Insert metadata")?;
                                     } else {
                                         todo!("Register matches")
                                     }
-
-                                    //     if matches.is_empty() {
-                                    //         match emycloud_client_rs::insert(
-                                    //             source,
-                                    //             info.artist.clone(),
-                                    //             info.title.clone(),
-                                    //         )
-                                    //         .await
-                                    //         {
-                                    //             Ok(id) => {
-                                    //                 log::info!(
-                                    //                     "Inserted new track '{}'/'{}': {id}",
-                                    //                     info.artist,
-                                    //                     info.title,
-                                    //                 )
-
-                                    //                 // TODO: Update meta info.
-                                    //             }
-                                    //             Err(e) => {
-                                    //                 log::error!("Failed to insert track '{}'/'{}': {e:#}", info.artist, info.title);
-                                    //             }
-                                    //         }
-                                    //     } else {
-                                    //         for id in &matches {
-                                    //             log::info!("Update metadata for {id}");
-                                    //             // TODO: Update meta info.
-                                    //         }
-                                    //     }
-                                    // }
-                                    // Err(_) => todo!(),
-                                    // }
                                 }
                                 Err(e) => {
                                     log::error!("Failed to download {}: {e:#}", info.url)
@@ -211,32 +172,7 @@ async fn main() -> Result<()> {
     }
 }
 
-#[derive(Debug)]
-pub enum ContentType {
-    Aac,
-}
-
-impl TryFrom<&HeaderValue> for ContentType {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &HeaderValue) -> Result<Self, Self::Error> {
-        if value == HeaderValue::from_static("audio/acc") {
-            Ok(ContentType::Aac)
-        } else {
-            Err(anyhow!("Unknown content type"))
-        }
-    }
-}
-
-impl ToString for ContentType {
-    fn to_string(&self) -> String {
-        match self {
-            ContentType::Aac => "aac".to_owned(),
-        }
-    }
-}
-
-async fn download(info: &SegmentDownloadInfo) -> Result<(Option<ContentType>, Bytes)> {
+async fn download(info: &SegmentDownloadInfo) -> Result<(String, Bytes)> {
     let response = reqwest::get(info.url.clone()).await?;
 
     log::debug!(
@@ -248,7 +184,12 @@ async fn download(info: &SegmentDownloadInfo) -> Result<(Option<ContentType>, By
     let content_type = response
         .headers()
         .get(CONTENT_TYPE)
-        .and_then(|h| ContentType::try_from(h).ok());
+        .ok_or_else(|| anyhow!("Failed to get content type"))
+        .and_then(|h| {
+            h.to_str()
+                .map(|s| s.to_owned())
+                .map_err(|e| anyhow!("Failed to get content type {e:#}"))
+        })?;
 
     log::debug!("Content type: {:?}", content_type);
 
