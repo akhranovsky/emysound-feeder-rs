@@ -53,7 +53,7 @@ impl MatchesStorage {
         })
     }
 
-    fn insert(&self, data: &MatchData) -> anyhow::Result<()> {
+    pub fn insert(&self, data: &MatchData) -> anyhow::Result<()> {
         let conn = self.conn.borrow_mut();
         conn.prepare_cached("INSERT INTO matches VALUES(?, ?, ?)")
             .context("Prepare statement")?
@@ -62,7 +62,7 @@ impl MatchesStorage {
         Ok(())
     }
 
-    fn get(&self, id: Uuid) -> anyhow::Result<Vec<MatchData>> {
+    pub fn get(&self, id: Uuid) -> anyhow::Result<Vec<MatchData>> {
         let conn = self.conn.borrow();
         let mut stmt = conn
             .prepare("SELECT timestamp, score FROM matches WHERE id=? ORDER BY timestamp DESC")?;

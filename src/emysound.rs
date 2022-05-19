@@ -11,6 +11,16 @@ pub struct QueryResult {
     title: Option<String>,
 }
 
+impl QueryResult {
+    pub fn id(&self) -> Uuid {
+        self.id
+    }
+    pub fn score(&self) -> u8 {
+        assert!(self.coverage >= 0f32 && self.coverage <= 1f32);
+        (self.coverage * 100f32).trunc() as u8
+    }
+}
+
 impl TryFrom<&emycloud_client_rs::QueryResult> for QueryResult {
     type Error = anyhow::Error;
 

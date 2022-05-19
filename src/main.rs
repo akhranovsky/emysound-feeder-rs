@@ -6,6 +6,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use bytes::Bytes;
 use chrono::Utc;
 use clap::Parser;
+use emysound::QueryResult;
 use hls_m3u8::{MediaPlaylist, MediaSegment};
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -19,7 +20,7 @@ mod emysound;
 mod storage;
 
 use crate::emysound::TrackInfo;
-use crate::storage::{AudioData, Metadata};
+use crate::storage::{AudioData, MatchData, Metadata};
 use crate::storage::{AudioStorage, MatchesStorage, MetadataStorage};
 
 #[derive(Debug, Parser)]
@@ -150,7 +151,10 @@ async fn main() -> Result<()> {
                                             .insert(&info.to_metadata(id))
                                             .context("Insert metadata")?;
                                     } else {
-                                        todo!("Register matches")
+                                        matches
+                                            .iter()
+                                            .map(|result| matches_storage.insert(&result.into()))
+                                            .collect::<Result<Vec<_>>>()?;
                                     }
                                 }
                                 Err(e) => {
@@ -172,6 +176,11 @@ async fn main() -> Result<()> {
     }
 }
 
+impl From<&QueryResult> for MatchData {
+    fn from(value: &QueryResult) -> Self {
+        MatchData::new(value.id(), Utc::now(), value.score())
+    }
+}
 async fn download(info: &SegmentDownloadInfo) -> Result<(String, Bytes)> {
     let response = reqwest::get(info.url.clone()).await?;
 
