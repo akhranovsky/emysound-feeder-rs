@@ -6,17 +6,21 @@ use anyhow::{anyhow, bail, Context, Result};
 use bytes::Bytes;
 use chrono::Utc;
 use clap::Parser;
-use emycloud_client_rs::MediaSource;
 use hls_m3u8::{MediaPlaylist, MediaSegment};
 use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest::header::{HeaderValue, CONTENT_TYPE};
 use reqwest::{StatusCode, Url};
+use storage::AudioKind;
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
 mod emysound;
 mod storage;
+
+use crate::emysound::TrackInfo;
+use crate::storage::{AudioData, AudioFormat, Metadata};
+use crate::storage::{AudioStorage, MatchesStorage, MetadataStorage};
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -41,6 +45,10 @@ async fn main() -> Result<()> {
 
     let client = reqwest::Client::new();
     let mut segment_number_filter = SegmentNumberFilter::new();
+
+    let metadata_storage = MetadataStorage::new(&"./metadata.sqlite3")?;
+    let audio_storage = AudioStorage::new(&"./audio.sqlite3")?;
+    let matches_storage = MatchesStorage::new(&"./matches.sqlite3")?;
 
     loop {
         let response = client.get(stream_url.clone()).send().await?;
@@ -121,9 +129,37 @@ async fn main() -> Result<()> {
                         let mut stream = tokio_stream::iter(downloads);
                         while let Some(info) = stream.next().await {
                             match download(&info).await {
-                                Ok((_content_type, bytes)) => {
+                                Ok((content_type, bytes)) => {
                                     let filename = info.filename();
                                     let matches = emysound::query(&filename, &bytes).await?;
+
+                                    if matches.is_empty() {
+                                        let id = Uuid::new_v4();
+                                        emysound::insert(info.to_track_info(id), &filename, &bytes)
+                                            .await?;
+
+                                        let metadata = info.to_metadata(id);
+                                        let audio_format = content_type
+                                            .map(|t| match t {
+                                                ContentType::Aac => AudioFormat::Aac,
+                                            })
+                                            .ok_or_else(|| {
+                                                anyhow!("Failed to find audio format")
+                                            })?;
+
+                                        let audio_format =
+                                            AudioData::new(id, audio_format, bytes.clone());
+
+                                        audio_storage
+                                            .insert(&audio_format)
+                                            .context("Insert audio")?;
+
+                                        metadata_storage
+                                            .insert(&metadata)
+                                            .context("Insert metadata")?;
+                                    } else {
+                                        todo!("Register matches")
+                                    }
 
                                     //     if matches.is_empty() {
                                     //         match emycloud_client_rs::insert(
@@ -243,6 +279,20 @@ impl SegmentDownloadInfo {
                 .path_segments()
                 .and_then(|s| s.last())
                 .unwrap_or("unknown")
+        )
+    }
+
+    fn to_track_info(&self, id: Uuid) -> TrackInfo {
+        TrackInfo::new(id, self.artist.clone(), self.title.clone())
+    }
+
+    fn to_metadata(&self, id: Uuid) -> Metadata {
+        Metadata::new(
+            id,
+            Utc::now(),
+            self.kind.into(),
+            self.artist.clone(),
+            self.title.clone(),
         )
     }
 }
@@ -413,6 +463,17 @@ impl Display for SuggestedSegmentContentKind {
             SuggestedSegmentContentKind::Talk => f.write_str("talk"),
             SuggestedSegmentContentKind::Advertisement => f.write_str("advertisement"),
             SuggestedSegmentContentKind::Music => f.write_str("music"),
+        }
+    }
+}
+
+impl From<SuggestedSegmentContentKind> for AudioKind {
+    fn from(kind: SuggestedSegmentContentKind) -> Self {
+        match kind {
+            SuggestedSegmentContentKind::None => AudioKind::Unknown,
+            SuggestedSegmentContentKind::Talk => AudioKind::Talk,
+            SuggestedSegmentContentKind::Advertisement => AudioKind::Advertisement,
+            SuggestedSegmentContentKind::Music => AudioKind::Music,
         }
     }
 }

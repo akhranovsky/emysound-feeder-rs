@@ -71,7 +71,7 @@ impl AudioStorage {
         })
     }
 
-    fn insert(&self, data: &AudioData) -> anyhow::Result<()> {
+    pub fn insert(&self, data: &AudioData) -> anyhow::Result<()> {
         let mut conn: std::cell::RefMut<Connection> = self.conn.borrow_mut();
         conn.transaction().and_then(|tx| {
             tx.execute(
@@ -98,7 +98,7 @@ impl AudioStorage {
         Ok(())
     }
 
-    fn get(&self, id: Uuid) -> anyhow::Result<AudioData> {
+    pub fn get(&self, id: Uuid) -> anyhow::Result<AudioData> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare("SELECT rowid, format FROM audio WHERE id=?")?;
         let data = stmt.query_row([id.to_string()], |row| {

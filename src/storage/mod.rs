@@ -4,13 +4,13 @@ mod audio;
 mod matches;
 mod metadata;
 
-use audio::AudioData;
-use audio::AudioFormat;
-use audio::AudioStorage;
+pub use audio::AudioData;
+pub use audio::AudioFormat;
+pub use audio::AudioStorage;
 
-use matches::MatchData;
-use matches::MatchesStorage;
+pub use matches::MatchData;
+pub use matches::MatchesStorage;
 
-use metadata::AudioKind;
-use metadata::Metadata;
-use metadata::MetadataStorage;
+pub use metadata::AudioKind;
+pub use metadata::Metadata;
+pub use metadata::MetadataStorage;
