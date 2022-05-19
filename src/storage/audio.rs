@@ -37,15 +37,14 @@ impl ToSql for AudioFormat {
 
 impl FromSql for AudioFormat {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        match value.as_str() {
-            Ok("aac") => Ok(AudioFormat::Aac),
-            Ok(_) => Err(FromSqlError::InvalidType),
-            Err(e) => Err(e),
-        }
+        value.as_str().and_then(|v| match v {
+            "aac" => Ok(AudioFormat::Aac),
+            _ => Err(FromSqlError::InvalidType),
+        })
     }
 }
 
-struct AudioStorage {
+pub struct AudioStorage {
     conn: RefCell<Connection>,
 }
 
