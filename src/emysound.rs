@@ -4,6 +4,7 @@ use emycloud_client_rs::MediaSource;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct QueryResult {
     id: Uuid,
     coverage: f32,
@@ -14,6 +15,12 @@ pub struct QueryResult {
 impl QueryResult {
     pub fn id(&self) -> Uuid {
         self.id
+    }
+    pub fn artist(&self) -> &Option<String> {
+        &self.artist
+    }
+    pub fn title(&self) -> &Option<String> {
+        &self.title
     }
     pub fn score(&self) -> u8 {
         assert!(self.coverage >= 0f32 && self.coverage <= 1f32);

@@ -136,6 +136,13 @@ async fn main() -> Result<()> {
 
                                     if matches.is_empty() {
                                         let id = Uuid::new_v4();
+
+                                        log::info!(
+                                            "Insert new audio segment `{}`/`{}` {id}",
+                                            &info.artist,
+                                            &info.title
+                                        );
+
                                         emysound::insert(info.to_track_info(id), &filename, &bytes)
                                             .await?;
 
@@ -153,6 +160,23 @@ async fn main() -> Result<()> {
                                     } else {
                                         matches
                                             .iter()
+                                            .inspect(|result| {
+                                                log::info!(
+                                                    "`{}`/`{}` matches  {} `{}`/`{}` {}",
+                                                    &info.artist,
+                                                    &info.title,
+                                                    result.id(),
+                                                    result
+                                                        .artist()
+                                                        .as_ref()
+                                                        .unwrap_or(&String::new()),
+                                                    result
+                                                        .title()
+                                                        .as_ref()
+                                                        .unwrap_or(&String::new()),
+                                                    result.score()
+                                                );
+                                            })
                                             .map(|result| matches_storage.insert(&result.into()))
                                             .collect::<Result<Vec<_>>>()?;
                                     }
