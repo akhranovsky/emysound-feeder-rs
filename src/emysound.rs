@@ -46,3 +46,24 @@ pub async fn query(filename: &str, bytes: &Bytes) -> anyhow::Result<Vec<QueryRes
         .inspect(|result| log::debug!("{result:?}"))
         .collect()
 }
+
+#[derive(Debug)]
+pub struct TrackInfo {
+    id: Uuid,
+    artist: String,
+    title: String,
+}
+
+impl TrackInfo {
+    pub fn new(id: Uuid, artist: String, title: String) -> Self {
+        Self { id, artist, title }
+    }
+}
+
+pub async fn insert(info: TrackInfo, filename: &str, bytes: &Bytes) -> anyhow::Result<()> {
+    let source = MediaSource::Bytes(filename, bytes);
+
+    emycloud_client_rs::insert(source, info.id, info.artist, info.title)
+        .await
+        .context("EmySound::insert")
+}
