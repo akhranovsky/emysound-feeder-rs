@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use anyhow::anyhow;
 use bytes::Bytes;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use rusqlite::{params, Connection, DatabaseName, OpenFlags, ToSql};
@@ -101,22 +100,18 @@ impl AudioStorage {
 
     fn get(&self, id: Uuid) -> anyhow::Result<AudioData> {
         let conn = self.conn.borrow();
-        let mut stmt = conn.prepare("SELECT rowid, id,format FROM audio WHERE id=?")?;
-        let mut rows = stmt.query([id.to_string()])?;
-        match rows.next() {
-            Ok(Some(row)) => {
-                let rowid = row.get(0)?;
-                let id = Uuid::try_parse(&row.get::<usize, String>(1)?)?;
-                let format: AudioFormat = row.get(2)?;
+        let mut stmt = conn.prepare("SELECT rowid, format FROM audio WHERE id=?")?;
+        let data = stmt.query_row([id.to_string()], |row| {
+            let rowid = row.get(0)?;
+            let format: AudioFormat = row.get(1)?;
 
-                let mut blob = conn.blob_open(DatabaseName::Main, "audio", "bytes", rowid, true)?;
-                let mut buffer = Vec::new();
-                blob.read_to_end(&mut buffer)?;
-                Ok(AudioData::new(id, format, buffer.into()))
-            }
-            Ok(None) => Err(anyhow!("No results.")),
-            Err(e) => Err(anyhow!("Query failed: {e:#}")),
-        }
+            let mut blob = conn.blob_open(DatabaseName::Main, "audio", "bytes", rowid, true)?;
+            let mut buffer = Vec::new();
+            blob.read_to_end(&mut buffer)
+                .map_err(|e| FromSqlError::Other(Box::new(e)))?;
+            Ok(AudioData::new(id, format, buffer.into()))
+        })?;
+        Ok(data)
     }
 }
 

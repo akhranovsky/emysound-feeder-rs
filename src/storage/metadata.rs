@@ -3,7 +3,6 @@
 use std::cell::RefCell;
 use std::path::Path;
 
-use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use rusqlite::{params, Connection, OpenFlags, ToSql};
@@ -120,18 +119,14 @@ impl MetadataStorage {
     pub fn get(&self, id: Uuid) -> anyhow::Result<Metadata> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare("SELECT date, kind, artist, title FROM metadata WHERE id=?")?;
-        let mut rows = stmt.query([id.to_string()])?;
-        match rows.next() {
-            Ok(Some(row)) => {
-                let date: DateTime<Utc> = row.get(0)?;
-                let kind: AudioKind = row.get(1)?;
-                let artist = row.get(2)?;
-                let title = row.get(3)?;
-                Ok(Metadata::new(id, date, kind, artist, title))
-            }
-            Ok(None) => Err(anyhow!("No results.")),
-            Err(e) => Err(anyhow!("Query failed: {e:#}")),
-        }
+        let data = stmt.query_row([id.to_string()], |row| {
+            let date: DateTime<Utc> = row.get(0)?;
+            let kind: AudioKind = row.get(1)?;
+            let artist = row.get(2)?;
+            let title = row.get(3)?;
+            Ok(Metadata::new(id, date, kind, artist, title))
+        })?;
+        Ok(data)
     }
 }
 
