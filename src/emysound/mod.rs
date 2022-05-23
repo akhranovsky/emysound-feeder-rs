@@ -1,7 +1,11 @@
+mod matcher;
+
 use anyhow::{anyhow, Context};
 use bytes::Bytes;
 use emycloud_client_rs::MediaSource;
 use uuid::Uuid;
+
+use self::matcher::best_results;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -50,7 +54,7 @@ impl TryFrom<&emycloud_client_rs::QueryResult> for QueryResult {
     }
 }
 
-const MIN_CONFIDENCE: f32 = 0.8f32;
+const MIN_CONFIDENCE: f32 = 0.2f32;
 
 pub async fn query(filename: &str, bytes: &Bytes) -> anyhow::Result<Vec<QueryResult>> {
     let source = MediaSource::Bytes(filename, bytes);
@@ -61,7 +65,8 @@ pub async fn query(filename: &str, bytes: &Bytes) -> anyhow::Result<Vec<QueryRes
         .iter()
         .map(|result| result.try_into())
         .inspect(|result| log::debug!("{result:?}"))
-        .collect()
+        .collect::<anyhow::Result<Vec<_>>>()
+        .map(best_results)
 }
 
 #[derive(Debug)]

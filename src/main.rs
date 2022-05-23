@@ -88,7 +88,7 @@ async fn main() -> Result<()> {
                                             SuggestedSegmentContentKind::None => {
                                                 log::info!("Segment#{} SKIPPED: unknown kind, artist={}, title={}", segment.number(), info.artist, info.title);
                                                 log::info!("Segment#{} title={:?}", segment.number(), segment.duration.title());
-                                                None
+                                                Some(SegmentDownloadInfo{ artist: "Unknown".to_string(), title: "Unknown".to_string(), ..download_info})
                                             }
                                             SuggestedSegmentContentKind::Talk => {
                                                 log::info!("Segment#{} DOWNLOAD: likely talk, artist: {}, title: {}", segment.number(), info.artist, info.title);
