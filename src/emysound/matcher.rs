@@ -12,7 +12,7 @@ pub fn best_results(results: Vec<QueryResult>) -> Vec<QueryResult> {
                     .find(|r2| {
                         r2.id() != r.id()
                             && (r2.artist() == r.artist() || r2.title() == r.title())
-                            && (r.score() + r2.score() >= 90)
+                            && (90u8..=100).contains(&(r.score() + r2.score()))
                     })
                     .map(|v| {
                         log::debug!("Result match: {r:?} - {v:?}");

@@ -27,8 +27,17 @@ impl QueryResult {
         &self.title
     }
     pub fn score(&self) -> u8 {
-        assert!(self.coverage >= 0f32 && self.coverage <= 1f32);
-        (self.coverage * 100f32).trunc() as u8
+        return if self.coverage >= 0f32 && self.coverage <= 1f32 {
+            (self.coverage * 100f32).trunc() as u8
+        } else {
+            log::error!(
+                "Coverage out of bounds: {:?} / {:?} {}",
+                self.artist,
+                self.title,
+                self.coverage
+            );
+            0u8
+        };
     }
 }
 
