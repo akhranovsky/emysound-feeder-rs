@@ -1,14 +1,16 @@
 use std::fmt::Display;
+use std::io::{BufReader, Cursor};
 use std::time::Duration;
 // use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use chrono::Utc;
 use clap::Parser;
 use emysound::QueryResult;
 use hls_m3u8::{MediaPlaylist, MediaSegment};
 use lazy_static::lazy_static;
+use lofty::Probe;
 use regex::Regex;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{StatusCode, Url};
@@ -131,6 +133,16 @@ async fn main() -> Result<()> {
                         while let Some(info) = stream.next().await {
                             match download(&info).await {
                                 Ok((audio_format, bytes)) => {
+                                    let tagged_file = Probe::new(Cursor::new(&bytes))
+                                        .guess_file_type()?
+                                        .read(false)?;
+
+                                    for tag in tagged_file.tags() {
+                                        for item in tag.items() {
+                                            log::info!("{:?} {:?}", item.key(), item.value());
+                                        }
+                                    }
+
                                     let filename = info.filename();
                                     let matches = emysound::query(&filename, &bytes).await?;
 
