@@ -176,6 +176,11 @@ async fn main() -> Result<()> {
                                                         .unwrap_or(&String::new()),
                                                     result.score()
                                                 );
+
+                                                log::info!(
+                                                    "{:?}",
+                                                    metadata_storage.get(result.id()).map(|v| v.id)
+                                                )
                                             })
                                             .map(|result| matches_storage.insert(&result.into()))
                                             .collect::<Result<Vec<_>>>()?;
@@ -322,10 +327,11 @@ struct KostaRadioSegmentInfo {
 impl KostaRadioSegmentInfo {
     fn is_music(&self) -> bool {
         (self.song_spot == 'M' || self.song_spot == 'F')
-            && self.length > Duration::ZERO
+            && self.length > Duration::new(90, 0)
             && (self.media_base_id > 0
                 || self.itunes_track_id > 0
                 || (self.amg_artist_id > 0 && self.amg_track_id > 0)
+                || (self.tp_id > 0)
                 || self.amg_artwork_url.is_some())
     }
 

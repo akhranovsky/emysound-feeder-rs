@@ -69,7 +69,7 @@ impl TryFrom<&str> for AudioKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Metadata {
-    id: Uuid,
+    pub id: Uuid,
     date: DateTime<Utc>,
     kind: AudioKind,
     artist: String,
