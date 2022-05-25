@@ -45,7 +45,7 @@ impl TryFrom<&emycloud_client_rs::QueryResult> for QueryResult {
     type Error = anyhow::Error;
 
     fn try_from(value: &emycloud_client_rs::QueryResult) -> Result<Self, Self::Error> {
-        let id = Uuid::try_parse(&value.id).context("Parsing uuid")?;
+        let id = Uuid::try_parse(&value.track.id).context("Parsing uuid")?;
         let coverage = value
             .audio
             .as_ref()
